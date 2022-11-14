@@ -1,7 +1,6 @@
 use rustc_hir::{
-  def_id::LocalDefId,
   intravisit::{self, Visitor},
-  BodyId, Expr, ExprKind, HirId,
+  BodyId, Expr, ExprKind,
 };
 use rustc_middle::{
   hir::nested_filter::OnlyBodies,

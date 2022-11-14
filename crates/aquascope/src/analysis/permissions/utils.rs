@@ -5,18 +5,14 @@ use std::{
 };
 
 use flowistry::mir::utils::{dump_results, PlaceExt};
-use rustc_borrowck::{
-  borrow_set::{BorrowData, BorrowSet},
-  consumers::{BodyWithBorrowckFacts, RichLocation, RustcFacts},
-};
+
 use rustc_data_structures::fx::FxHashMap as HashMap;
-use rustc_hir::{def_id::DefId, Mutability};
+
 use rustc_middle::{
-  mir::{Location, Place, ProjectionElem},
-  ty::TyCtxt,
+  mir::{Location, Place},
 };
 use rustc_mir_dataflow::{
-  fmt::DebugWithContext, move_paths::MoveData, Analysis, AnalysisDomain,
+  fmt::DebugWithContext, Analysis, AnalysisDomain,
   JoinSemiLattice,
 };
 

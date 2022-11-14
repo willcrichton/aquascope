@@ -127,8 +127,7 @@ impl Output<AquascopeFacts> {
     let cannot_write = self.cannot_write.get(point).unwrap_or(empty_hash);
     let cannot_drop = self.cannot_drop.get(point).unwrap_or(empty_hash);
 
-    let read =
-      !(cannot_read.contains_key(path) || path_moved_at.contains(path));
+    let read = !(cannot_read.contains_key(path) || path_moved_at.contains(path));
     let write = !(self.never_write.contains(path)
       || cannot_write.contains_key(path)
       || path_moved_at.contains(path));
@@ -139,24 +138,17 @@ impl Output<AquascopeFacts> {
     Permissions { read, write, drop }
   }
 
-  pub fn populate_ctxt<'a, 'tcx>(ctxt: &mut PermissionsCtxt<'a, 'tcx>) {
+  pub fn populate_ctxt(ctxt: &mut PermissionsCtxt) {
     let def_id = ctxt.tcx.hir().body_owner_def_id(ctxt.body_id);
     let body = &ctxt.body_with_facts.body;
     let tcx = ctxt.tcx;
-    let places: Vec<Place<'tcx>> = body
+    let places: Vec<Place> = body
       .local_decls
       .indices()
-      .flat_map(|local| {
-        Place::from_local(local, tcx).interior_paths(
-          tcx,
-          body,
-          def_id.to_def_id(),
-        )
-      })
+      .flat_map(|local| Place::from_local(local, tcx).interior_paths(tcx, body, def_id.to_def_id()))
       .collect();
 
-    let paths: Vec<Path> =
-      places.iter().map(|place| ctxt.new_path(*place)).collect();
+    let paths: Vec<Path> = places.iter().map(|place| ctxt.new_path(*place)).collect();
 
     let loan_to_borrow = |l: Loan| &ctxt.borrow_set[l];
 
@@ -166,9 +158,7 @@ impl Output<AquascopeFacts> {
         // Iff there exists an immutable prefix it is also `never_write`
         place
           .iter_projections()
-          .filter_map(|(prefix, elem)| {
-            matches!(elem, ProjectionElem::Deref).then_some(prefix)
-          })
+          .filter_map(|(prefix, elem)| matches!(elem, ProjectionElem::Deref).then_some(prefix))
           .any(|prefix| {
             let ty = prefix.ty(&body.local_decls, tcx).ty;
             match ty.ref_mutability() {
@@ -183,8 +173,8 @@ impl Output<AquascopeFacts> {
     let is_never_drop = |path: Path| ctxt.path_to_place(path).is_indirect();
 
     // .decl loan_conflicts_with(Loan, Path)
-    let loan_conflicts_with: Relation<(Loan, Path)> = Relation::from_iter(
-      ctxt.polonius_input_facts.loan_issued_at.iter().flat_map(
+    let loan_conflicts_with: Relation<(Loan, Path)> =
+      Relation::from_iter(ctxt.polonius_input_facts.loan_issued_at.iter().flat_map(
         |(_origin, loan, _point)| {
           let borrow = loan_to_borrow(*loan);
           places.iter().filter_map(|place| {
@@ -200,8 +190,7 @@ impl Output<AquascopeFacts> {
             .then_some((*loan, ctxt.place_to_path(place)))
           })
         },
-      ),
-    );
+      ));
 
     let loan_live_at: Relation<(Loan, Point)> = Relation::from_iter(
       ctxt
@@ -297,7 +286,7 @@ impl Output<AquascopeFacts> {
           cfg_edge.extend_with(|&(_path, point1)| point1),
           path_assigned_at_base.extend_anti(|&(path, _point1)| path),
         ),
-        |&(path, point1), &point2| (path, point2),
+        |&(path, _point1), &point2| (path, point2),
       );
     }
 
@@ -314,39 +303,17 @@ impl Output<AquascopeFacts> {
         .insert(path);
     }
 
-    for &(path, loan, point) in cannot_read.iter() {
-      ctxt
-        .permissions_output
-        .cannot_read
-        .entry(point)
-        .or_default()
-        .insert(path, loan);
+    macro_rules! insert_facts {
+      ($input:expr, $field:expr) => {
+        for &(path, loan, point) in $input.iter() {
+          $field.entry(point).or_default().insert(path, loan);
+        }
+      };
     }
 
-    for &(path, loan, point) in cannot_write.iter() {
-      ctxt
-        .permissions_output
-        .cannot_write
-        .entry(point)
-        .or_default()
-        .insert(path, loan);
-    }
-
-    for &(path, loan, point) in cannot_drop.iter() {
-      ctxt
-        .permissions_output
-        .cannot_drop
-        .entry(point)
-        .or_default()
-        .insert(path, loan);
-    }
-
-    log::debug!(
-      "#cannot_read {} #cannot_write {} #cannot_drop {}",
-      cannot_read.len(),
-      cannot_write.len(),
-      cannot_drop.len()
-    );
+    insert_facts!(cannot_read, ctxt.permissions_output.cannot_read);
+    insert_facts!(cannot_write, ctxt.permissions_output.cannot_write);
+    insert_facts!(cannot_drop, ctxt.permissions_output.cannot_drop);
   }
 }
 
@@ -368,21 +335,17 @@ pub fn compute<'a, 'tcx>(
   log::debug!("computing body permissions {:?}", name.as_str());
 
   let polonius_input_facts = &body_with_facts.input_facts;
-  let polonius_output =
-    PEOutput::compute(polonius_input_facts, Algorithm::Naive, true);
+  let polonius_output = PEOutput::compute(polonius_input_facts, Algorithm::Naive, true);
 
-  let locals_are_invalidated_at_exit =
-    tcx.hir().body_owner_kind(def_id).is_fn_or_closure();
-  let move_data = match MoveData::gather_moves(body, tcx, tcx.param_env(def_id))
-  {
+  let locals_are_invalidated_at_exit = tcx.hir().body_owner_kind(def_id).is_fn_or_closure();
+  let move_data = match MoveData::gather_moves(body, tcx, tcx.param_env(def_id)) {
     Ok((_, move_data)) => move_data,
     Err((move_data, _illegal_moves)) => {
       log::debug!("illegal moves found {_illegal_moves:?}");
       move_data
     }
   };
-  let borrow_set =
-    BorrowSet::build(tcx, body, locals_are_invalidated_at_exit, &move_data);
+  let borrow_set = BorrowSet::build(tcx, body, locals_are_invalidated_at_exit, &move_data);
 
   let mut ctxt = PermissionsCtxt {
     tcx,
@@ -409,7 +372,7 @@ pub fn compute<'a, 'tcx>(
     timer.elapsed()
   );
 
-  ctxt.borrow_set.location_map.iter().for_each(|(k, bd)| {
+  ctxt.borrow_set.location_map.iter().for_each(|(_k, bd)| {
     log::debug!("Borrow Data {:?}", bd);
   });
 

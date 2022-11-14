@@ -5,6 +5,9 @@ RUN rustup default nightly-2022-09-12 && \
 
 WORKDIR /aquascope
 
+COPY crates/flowistry ./flowistry
+COPY crates/bench_utils ./bench_utils
+
 COPY crates/aquascope ./aquascope
 COPY crates/aquascope_front ./aquascope_front
 

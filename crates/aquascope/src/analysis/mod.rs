@@ -11,17 +11,16 @@ pub use find_bindings::find_bindings;
 use find_calls::FindCalls;
 use find_hir_calls::find_method_call_spans;
 use permissions::PermissionsCtxt;
-use rustc_borrowck::consumers::{BodyWithBorrowckFacts, RustcFacts};
-use rustc_data_structures::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
+use rustc_borrowck::consumers::{BodyWithBorrowckFacts};
+use rustc_data_structures::fx::{FxHashMap as HashMap};
 use rustc_hir::{
-  def::Res, def_id::LocalDefId, hir_id::HirId, BindingAnnotation, BodyId, Expr,
-  ExprKind, Node, QPath,
+  BodyId,
 };
 use rustc_middle::{
-  mir::{Location, Mutability, Operand, Place, Rvalue, StatementKind},
+  mir::{Mutability, Operand, Rvalue, StatementKind},
   ty::{Ty, TyCtxt},
 };
-use rustc_mir_dataflow::move_paths::{LookupResult, MoveData};
+
 use rustc_span::Span;
 use serde::Serialize;
 use ts_rs::TS;
@@ -131,8 +130,8 @@ pub fn pair_permissions_to_calls<'a, 'tcx>(
 ) -> Vec<PermissionsInfo> {
   let locations_to_body_info = ctxt.body_with_facts.body.find_calls();
 
-  let never_write = &ctxt.permissions_output.never_write;
-  let never_drop = &ctxt.permissions_output.never_drop;
+  let _never_write = &ctxt.permissions_output.never_write;
+  let _never_drop = &ctxt.permissions_output.never_drop;
 
   let method_spans = find_method_call_spans(ctxt.tcx, ctxt.body_id);
 
@@ -143,7 +142,7 @@ pub fn pair_permissions_to_calls<'a, 'tcx>(
       method_spans
         .iter()
         .find(|&&(fn_span, _)| call_info.fn_span.overlaps(fn_span))
-        .map(|&(fn_span, fn_sig)| {
+        .map(|&(_fn_span, fn_sig)| {
           let point_call = ctxt.location_to_point(*loc);
           let path = &ctxt.place_to_path(&call_info.receiver_place);
 

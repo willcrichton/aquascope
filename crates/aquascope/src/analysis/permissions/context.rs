@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+
 
 use polonius_engine::{AllFacts, FactTypes, Output as PEOutput};
 use rustc_borrowck::{
@@ -7,15 +7,15 @@ use rustc_borrowck::{
 };
 use rustc_data_structures::fx::FxHashMap as HashMap;
 use rustc_hir::{
-  def_id::{DefId, LocalDefId},
+  def_id::{DefId},
   BodyId, Mutability,
 };
 use rustc_index::vec::IndexVec;
 use rustc_middle::{
-  mir::{BorrowKind, Local, Location, Place},
+  mir::{Local, Location, Place},
   ty::TyCtxt,
 };
-use rustc_mir_dataflow::move_paths::{LookupResult, MoveData};
+use rustc_mir_dataflow::move_paths::{MoveData};
 
 use super::{AquascopeFacts, Loan, Output, Path, Point};
 
@@ -71,9 +71,7 @@ impl<'a, 'tcx> PermissionsCtxt<'a, 'tcx> {
   }
 
   pub fn is_mutable_borrow(&self, brw: &BorrowData<'tcx>) -> bool {
-    matches!(brw.kind, BorrowKind::Mut {
-      allow_two_phase_borrow: _,
-    })
+    brw.kind.to_mutbl_lossy() == Mutability::Mut    
   }
 
   pub fn path_to_moveable_path(&self, p: Path) -> MoveablePath {
@@ -104,6 +102,16 @@ impl<'a, 'tcx> PermissionsCtxt<'a, 'tcx> {
       fn from_point(p: Point) -> Self;
       fn expand(&mut self, p: Point);
     }
+
+    /*
+
+    for .. {
+
+      [let x = &y;
+      z.push(x);
+    }]
+    
+    */
 
     impl PointExt for (Point, Point) {
       fn from_point(p: Point) -> Self {
