@@ -1,24 +1,25 @@
-import { basicSetup } from "./setup";
-import { vim } from "@replit/codemirror-vim";
-import {
-  EditorView,
-  WidgetType,
-  Decoration,
-  DecorationSet,
-  ViewUpdate,
-  ViewPlugin,
-} from "@codemirror/view";
-import {
-  EditorState,
-  StateField,
-  StateEffect,
-  StateEffectType,
-  RangeSet,
-  Compartment,
-  Range,
-} from "@codemirror/state";
 import { rust } from "@codemirror/lang-rust";
 import { indentUnit } from "@codemirror/language";
+import {
+  Compartment,
+  EditorState,
+  Range,
+  RangeSet,
+  StateEffect,
+  StateEffectType,
+  StateField,
+} from "@codemirror/state";
+import {
+  Decoration,
+  DecorationSet,
+  EditorView,
+  ViewPlugin,
+  ViewUpdate,
+  WidgetType,
+} from "@codemirror/view";
+import { vim } from "@replit/codemirror-vim";
+
+import { basicSetup } from "./setup";
 import * as ty from "./types";
 
 const initial_code: string = `// Please start typing :)
@@ -249,15 +250,15 @@ class TextIco implements Icon {
     tt.setAttribute("font-family", "IBM Plex Sans");
     tt.setAttribute("font-size", `${glyph_width}px`);
     tt.setAttribute("font-weight", "bold");
-    tt.setAttribute("stroke-width", "2");
+    tt.setAttribute("stroke-width", this.actual == this.expected ? "1" : "2");
     tt.setAttribute("paint-order", "stroke");
     tt.textContent = this.contents;
 
-    tt.addEventListener("mouseenter", (_) => {
+    tt.addEventListener("mouseenter", _ => {
       this.start.style.width = "15px";
       this.end.style.width = "15px";
     });
-    tt.addEventListener("mouseleave", (_) => {
+    tt.addEventListener("mouseleave", _ => {
       this.start.style.width = "0px";
       this.end.style.width = "0px";
     });
@@ -281,7 +282,7 @@ class RWDPermissions<I extends TextIco> extends WidgetType {
 
   toDOM() {
     let all: Array<I> = [this.read, this.write, this.drop];
-    let icons: Array<I> = all.filter((t) => t.display);
+    let icons: Array<I> = all.filter(t => t.display);
 
     let wrap = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     wrap.classList.add("svg-perm");
@@ -289,10 +290,12 @@ class RWDPermissions<I extends TextIco> extends WidgetType {
     let my_width = glyph_width;
     wrap.setAttribute("width", `${my_width + 10}px`);
     wrap.setAttribute("height", `${my_height}px`);
+    wrap.style.position = "relative";
+    wrap.style.top = `${(icons.length - 1) * 4}px`;
 
     icons.forEach((ico_i: I, idx: number) => {
       let ico: HTMLElement = ico_i.toDom();
-      let y = (idx / icons.length) * 100 + 100 / icons.length;
+      let y = (idx / icons.length) * 100 + 100 / icons.length - 5;
       ico.setAttribute("text-anchor", "middle");
       ico.setAttribute("x", "50%");
       ico.setAttribute("y", `${y}%`);
@@ -376,7 +379,7 @@ let make_text_state_field_with_icon = <I extends TextIco>(
 
       return transactions.docChanged ? RangeSet.of([]) : points;
     },
-    provide: (f) => EditorView.decorations.from(f),
+    provide: f => EditorView.decorations.from(f),
   });
 };
 

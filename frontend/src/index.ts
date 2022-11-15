@@ -1,8 +1,8 @@
 import * as Ed from "./editor";
 import {
-  BackendResult,
   BackendError,
   BackendOutput,
+  BackendResult,
   PermissionsOutput,
 } from "./types";
 
@@ -66,6 +66,8 @@ window.addEventListener("load", () => {
 
     return globals.editor.remove_icon_field(receiver_types_field);
   });
+
+  refresh_receiver_vis();
 });
 
 async function refresh_receiver_vis() {
@@ -95,7 +97,7 @@ function get_receiver_types(): Promise<BackendResult<PermissionsOutput>> {
       code: code_in_editor,
     }),
   })
-    .then((response) => response.json())
+    .then(response => response.json())
     .then((data: ServerResponse) => {
       if (data.success) {
         let out: Result<PermissionsOutput> = JSON.parse(data.stdout);

@@ -11,10 +11,6 @@
     "@codemirror/search": "^6.2.2",
     "@codemirror/state": "^6.1.2",
     "@codemirror/view": "^6.4.0",
-    "@replit/codemirror-vim": "^6.0.3",
-    "esbuild": "^0.15.12"
-  },
-  "scripts": {
-    "build": "./build.mjs"
+    "@replit/codemirror-vim": "^6.0.3"
   }
 }

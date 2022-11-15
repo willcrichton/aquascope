@@ -8,15 +8,17 @@ mod permissions;
 
 use std::cell::RefCell;
 
+use either::Either;
 pub use find_bindings::find_bindings;
 use find_calls::FindCalls;
 use find_hir_calls::find_method_call_spans;
+use flowistry::mir::utils::OperandExt;
 use permissions::PermissionsCtxt;
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::fx::FxHashMap as HashMap;
 use rustc_hir::BodyId;
 use rustc_middle::{
-  mir::{Mutability, Operand, Rvalue, StatementKind},
+  mir::{Mutability, Operand, Rvalue, Statement, StatementKind},
   ty::{Ty, TyCtxt},
 };
 use rustc_span::Span;
@@ -133,99 +135,97 @@ pub fn pair_permissions_to_calls(
 
   let method_spans = find_method_call_spans(ctxt.tcx, ctxt.body_id);
 
+  // for all method calls foo.bar(..) in the HIR...
   method_spans
     .iter()
     .filter_map(|&(fn_span, fn_sig)| {
-      locations_to_body_info
+      // get the MIR call instructions with an overlapping span
+      let (loc, call_info) = locations_to_body_info
         .iter()
-        .find(|&(_, call_info)| call_info.fn_span.overlaps(fn_span))
-        .map(|(loc, call_info)| {
-          let point_call = ctxt.location_to_point(*loc);
-          let path = &ctxt.place_to_path(&call_info.receiver_place);
+        .find(|&(_, call_info)| call_info.fn_span.overlaps(fn_span))?;
 
-          log::debug!("I think this is from the source: {fn_sig:?}");
+      // point_call is location of the MIR call
+      let point_call = ctxt.location_to_point(*loc);
 
-          // HACK: there is a small issue with the path retrived from the call site.
-          // A piece of code like the following:
-          //
-          // ```rust
-          // let v = vec![];
-          // v.push(0);
-          // ```
-          //
-          // will get desugared into code that looks (roughly) like this:
-          //
-          // ```rust
-          // let v = vec![];
-          // let _t = &mut v;
-          // Vec::push(move _t, 0);
-          // ```
-          // What this means, is that using `_t` for the permissions at the call site
-          // will show that there is *always* enough permissions. Even though, in the
-          // above example `v` is missing Write permissions. And the borrow is illegal.
-          //
-          // The hack below finds the borrowed / moved path which would represent
-          // the receiver `v` in the example.
+      // path is the MIR receiver
+      let path = &ctxt.place_to_path(&call_info.receiver_place);
 
-          let place_0 = ctxt.path_to_place(*path);
-          let place_0_local = place_0.local;
-          let mut definitions = ctxt
-            .polonius_input_facts
-            .var_defined_at
-            .iter()
-            .filter_map(|&(v, p)| (v == place_0_local).then_some(p))
-            .collect::<Vec<_>>();
-          definitions.sort();
-          assert!(definitions.len() == 3);
-          // XXX: The brittle assumption here is that there are
-          // three points of assignment:
-          // 0. StorageLive
-          // 1. place = ...
-          // 2. StorageDead
-          // thus we eagerly take the middle assignment.
-          let point_assign = definitions[1];
-          let location = ctxt.point_to_location(point_assign);
-          let stmt = ctxt.body_with_facts.body.stmt_at(location);
+      log::debug!("I think this is from the source: {fn_sig:?}");
 
-          // XXX: the assumption here is that when assigning to a
-          // temporary path for a function call it is either:
-          // - a reference that gets borrowed from another place.
-          // - a move from another place.
-          //
-          // However, if the statement at the derived location is
-          // a terminator, then the default is to take the original
-          // place and point of the method call. This could happen,
-          // for example, in a line such as: `Vec::default().push(0)`.
-          let (place_1, point) =
-            stmt.left().map_or((place_0, point_call), |stmt| {
-              let place = match stmt.kind {
-                StatementKind::Assign(box (_, Rvalue::Ref(_, _, place))) => {
-                  place
-                }
-                StatementKind::Assign(box (
-                  _,
-                  Rvalue::Use(Operand::Move(place)),
-                )) => place,
-                _ => unreachable!(),
-              };
-              (place, point_assign)
-            });
+      // HACK: there is a small issue with the path retrived from the call site.
+      // A piece of code like the following:
+      //
+      // ```rust
+      // let v = vec![];
+      // v.push(0);
+      // ```
+      //
+      // will get desugared into code that looks (roughly) like this:
+      //
+      // ```rust
+      // let v = vec![];
+      // let _t = &mut v;
+      // Vec::push(move _t, 0);
+      // ```
+      // What this means, is that using `_t` for the permissions at the call site
+      // will show that there is *always* enough permissions. Even though, in the
+      // above example `v` is missing Write permissions. And the borrow is illegal.
+      //
+      // The hack below finds the borrowed / moved path which would represent
+      // the receiver `v` in the example.
 
-          let path = ctxt.place_to_path(&place_1);
-          let actual =
-            ctxt.permissions_output.permissions_at_point(path, point);
-          let expected = fn_sig.inputs()[0].into();
+      let place_0 = ctxt.path_to_place(*path);
+      let place_0_local = place_0.local;
 
-          let refined_by =
-            find_refinements_at_point(ctxt, path, point, span_to_range);
-
-          PermissionsInfo {
-            range: span_to_range(call_info.fn_span),
-            actual,
-            expected,
-            refined_by,
+      // find all the places where the local of the receiver is defined
+      let definitions = ctxt
+        .polonius_input_facts
+        .var_defined_at
+        .iter()
+        .filter(|(v, _)| (*v == place_0_local))
+        .filter_map(|(_, p)| {
+          let l = ctxt.point_to_location(*p);
+          let stmt = ctxt.body_with_facts.body.stmt_at(l).left()?;
+          match &stmt.kind {
+            StatementKind::Assign(box (_, rhs)) => Some((*p, rhs)),
+            _ => None,
           }
         })
+        .collect::<Vec<_>>();
+
+      // XXX: the assumption here is that when assigning to a
+      // temporary path for a function call it is either:
+      // - a reference that gets borrowed from another place.
+      // - a move from another place.
+      //
+      // However, if the statement at the derived location is
+      // a terminator, then the default is to take the original
+      // place and point of the method call. This could happen,
+      // for example, in a line such as: `Vec::default().push(0)`.
+      let (place_1, point) = match definitions.get(0) {
+        Some((point_assign, rhs)) => {
+          let place = match rhs {
+            Rvalue::Ref(_, _, place) => *place,
+            Rvalue::Use(op) => op.to_place().unwrap(),
+            _ => unimplemented!(),
+          };
+          (place, *point_assign)
+        }
+        None => (place_0, point_call),
+      };
+
+      let path = ctxt.place_to_path(&place_1);
+      let actual = ctxt.permissions_output.permissions_at_point(path, point);
+      let expected = fn_sig.inputs()[0].into();
+
+      let refined_by = find_refinements_at_point(ctxt, path, point, span_to_range);
+
+      Some(PermissionsInfo {
+        range: span_to_range(call_info.fn_span),
+        actual,
+        expected,
+        refined_by,
+      })
     })
     .collect()
 }
