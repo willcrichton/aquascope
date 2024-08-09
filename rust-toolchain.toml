@@ -1,3 +1,5 @@
 [toolchain]
-channel = "nightly-2023-08-25"
+# channel = "nightly-2024-05-20"
+channel = "nightlyc-wasm"
 components = ["rust-src", "rustc-dev", "llvm-tools-preview", "miri"]
+targets = ["wasm32-wasi"]

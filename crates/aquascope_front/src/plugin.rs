@@ -137,7 +137,7 @@ impl RustcPlugin for AquascopePlugin {
           callbacks
             .result
             .unwrap()
-            .map_err(|_| AquascopeError::BuildError { range: None }),
+            .map_err(|e| AquascopeError::AnalysisError { msg: e.to_string() }),
         )
       }
       _ => unreachable!(),

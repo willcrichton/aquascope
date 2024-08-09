@@ -9,13 +9,7 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 use either::Either;
 use itertools::Itertools;
-use miri::{
-  AllocId, AllocMap, AllocRange, Immediate, InterpCx, InterpError,
-  InterpErrorInfo, InterpResult, LocalState, LocalValue, Machine, MiriConfig,
-  MiriMachine, OpTy, Operand, UndefinedBehaviorInfo,
-};
 use rustc_abi::{FieldsShape, Size};
-use rustc_const_eval::ReportErrorExt;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
   mir::{
@@ -33,7 +27,14 @@ use rustc_utils::{source_map::range::CharRange, PlaceExt};
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::mvalue::{MMemorySegment, MPathSegment, MValue};
+use super::{
+  miri::{
+    self, AllocId, AllocMap, AllocRange, Immediate, InterpCx, InterpError,
+    InterpErrorInfo, InterpResult, LocalState, LocalValue, Machine, MiriConfig,
+    MiriMachine, OpTy, Operand, ReportErrorExt, UndefinedBehaviorInfo,
+  },
+  mvalue::{MMemorySegment, MPathSegment, MValue},
+};
 
 #[derive(Serialize, Debug, TS)]
 #[ts(export)]
@@ -120,7 +121,7 @@ impl<'tcx> MovedPlaces<'tcx> {
   }
 
   pub fn add_place(&mut self, frame: usize, place: Place<'tcx>) {
-    self.0.get_mut(frame).unwrap().insert(place);
+    // self.0.get_mut(frame).unwrap().insert(place);
   }
 
   pub fn push_frame(&mut self) {
@@ -287,7 +288,11 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
   pub(super) fn mem_is_initialized(
     &self,
     layout: TyAndLayout<'tcx>,
-    allocation: &miri::Allocation<miri::Provenance, miri::AllocExtra>,
+    allocation: &miri::Allocation<
+      miri::Provenance,
+      miri::AllocExtra,
+      miri::MiriAllocBytes,
+    >,
   ) -> bool {
     // TODO: this should be recursive over the type. Only handles one-step right now.
     let ranges = match &layout.fields {
@@ -406,7 +411,8 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
       _ => {}
     };
 
-    let op_ty = self.ecx.local_to_op(frame, local, layout)?;
+    let ty_and_layout = frame.locals.get(local).and_then(|ls| ls.layout.get());
+    let op_ty = self.ecx.local_to_op(local, ty_and_layout)?;
     Ok(Some((name, op_ty)))
   }
 
@@ -518,6 +524,7 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
 
   fn handle_moves(
     &mut self,
+    current_frame: usize,
     n_frames: usize,
     moves: Vec<Place<'tcx>>,
   ) -> InterpResult<'tcx, ()> {
@@ -533,9 +540,10 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
             Either::Left(_mplace) => {
               // todo!()
             }
-            Either::Right((frame, local, _)) => {
+            // FIXME(gavinleroy) is the `frame` now the third slot?
+            Either::Right((local, _, _)) => {
               moved_places
-                .add_place(frame, Place::from_local(local, self.ecx.tcx()));
+                .add_place(current_frame, Place::from_local(local, self.ecx.tcx()));
             }
           }
         }
@@ -569,7 +577,7 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
       let moves = self.collect_moves()?;
       let n_all_frames: usize = Machine::stack(&self.ecx).len();
       let more_work: bool = self.ecx.step()?;
-      self.handle_moves(n_all_frames, moves)?;
+      self.handle_moves(self.ecx.frame_idx(), n_all_frames, moves)?;
 
       let local_frames_after = self.local_frames().collect::<Vec<_>>();
       let current_loc_opt = match local_frames_after.len().cmp(&n_local_frames)
