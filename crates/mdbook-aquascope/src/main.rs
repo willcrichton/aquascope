@@ -10,10 +10,8 @@ use mdbook_preprocessor_utils::{
 
 mdbook_preprocessor_utils::asset_generator!("../js/");
 
-const FRONTEND_ASSETS: [Asset; 2] = [
-  make_asset!("aquascope-embed.iife.js"),
-  make_asset!("style.css"),
-];
+const FRONTEND_ASSETS: [Asset; 2] =
+  [make_asset!("embed.iife.js"), make_asset!("style.css")];
 
 struct AquascopePreprocessorWrapper(AquascopePreprocessor);
 

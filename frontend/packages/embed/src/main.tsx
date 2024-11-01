@@ -229,9 +229,10 @@ window.initAquascopeBlocks = async (root: HTMLElement) => {
   </div>
   `;
 
-      const ed = await Editor.make(
+      const ed = new Editor(
         elem,
         setup,
+        undefined,
         err => {
           console.error(err);
         },

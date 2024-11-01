@@ -1,6 +1,6 @@
 //! Interpreting memory as Rust data types
 
-use rustc_abi::{FieldsShape, Align};
+use rustc_abi::FieldsShape;
 use rustc_apfloat::Float;
 use rustc_middle::ty::{
   layout::{LayoutOf, TyAndLayout},
@@ -178,12 +178,22 @@ impl<'tcx> Reader<'_, '_, 'tcx> {
     &mut self,
     mplace: miri::MPlaceTy<'tcx, miri::Provenance>,
   ) -> InterpResult<'tcx, MValue> {
+    log::trace!("Reading pointer: {mplace:?}");
+
+    if mplace.ptr().provenance.is_none() {
+      log::warn!("mplace missing provenance: {mplace:?}");
+      return Ok(MValue::Unallocated { alloc_id: None });
+    }
+
     // Determine the base allocation from the mplace's provenance
     let (alloc_id, offset, _) = self.ev.ecx.ptr_get_alloc_id(mplace.ptr())?;
     let (alloc_size, _, alloc_status) = self.ev.ecx.get_alloc_info(alloc_id);
 
     if matches!(alloc_status, AllocKind::Dead) {
-      log::warn!("Reading a dead allocation");
+      log::warn!("Reading a dead allocation: {mplace:?}");
+      return Ok(MValue::Unallocated {
+        alloc_id: Some(self.ev.remap_alloc_id(alloc_id)),
+      });
     }
 
     // Check if we have seen this allocation before
@@ -321,6 +331,7 @@ impl<'tcx> Reader<'_, '_, 'tcx> {
       TyKind::Adt(adt_def, _) => {
         let def_id = adt_def.did();
         let name = self.ev.ecx.tcx.item_name(def_id).to_ident_string();
+        log::trace!("Reading adt: {name}");
 
         macro_rules! process_fields {
           ($op:expr, $fields:expr) => {{
@@ -454,8 +465,10 @@ impl<'tcx> Reader<'_, '_, 'tcx> {
       }
 
       _ if ty.is_any_ptr() => {
-        let val = self.ev.ecx.read_immediate(op)?;
-        let mplace = self.ev.ecx.ref_to_mplace(&val)?;
+        log::trace!("Reading pointer type: {ty:?}");
+
+        let mplace = self.ev.ecx.deref_pointer(op)?;
+
         // if self.ev.ecx.check_mplace(&mplace).is_err() {
         //   let alloc_id = match self.ev.ecx.ptr_get_alloc_id(mplace.ptr()) {
         //     Ok((alloc_id, _, _)) => Some(self.ev.remap_alloc_id(alloc_id)),
@@ -463,6 +476,7 @@ impl<'tcx> Reader<'_, '_, 'tcx> {
         //   };
         //   return Ok(MValue::Unallocated { alloc_id });
         // }
+
         self.read_pointer(mplace)?
       }
 

@@ -121,7 +121,7 @@ impl<'tcx> MovedPlaces<'tcx> {
   }
 
   pub fn add_place(&mut self, frame: usize, place: Place<'tcx>) {
-    // self.0.get_mut(frame).unwrap().insert(place);
+    self.0.get_mut(frame).unwrap().insert(place);
   }
 
   pub fn push_frame(&mut self) {
@@ -323,7 +323,8 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
   fn test_local(
     &self,
     frame: &MiriFrame<'mir, 'tcx>,
-    frame_index: usize,
+    local_index: usize,
+    global_index: usize,
     local: Local,
     state: &LocalState<'tcx, miri::Provenance>,
   ) -> InterpResult<'tcx, Option<(String, OpTy<'tcx, miri::Provenance>)>> {
@@ -406,13 +407,16 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
 
         memory_map
           .stack_slots
-          .insert(alloc_id, (frame_index, name.clone(), layout.unwrap()));
+          .insert(alloc_id, (local_index, name.clone(), layout.unwrap()));
       }
       _ => {}
     };
 
     let ty_and_layout = frame.locals.get(local).and_then(|ls| ls.layout.get());
-    let op_ty = self.ecx.local_to_op(local, ty_and_layout)?;
+    let op_ty =
+      self
+        .ecx
+        .local_to_op_at_frame(local, global_index, ty_and_layout)?;
     Ok(Some((name, op_ty)))
   }
 
@@ -421,14 +425,17 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
       .local_frames()
       .map(
         |LocalFrame {
-           local_index, frame, ..
+           local_index,
+           frame,
+           global_index,
+           ..
          }| {
           frame
             .locals
             .iter_enumerated()
             .filter_map(|(local, state)| {
               let local_data_res = self
-                .test_local(frame, local_index, local, state)
+                .test_local(frame, local_index, global_index, local, state)
                 .transpose()?;
               Some(local_data_res.map(|(name, op)| (local, name, op)))
             })
@@ -524,13 +531,12 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
 
   fn handle_moves(
     &mut self,
-    current_frame: usize,
-    n_frames: usize,
+    n_frames_before: usize,
     moves: Vec<Place<'tcx>>,
   ) -> InterpResult<'tcx, ()> {
     let n_frames_after = Machine::stack(&self.ecx).len();
     let mut moved_places = self.moved_places.borrow_mut();
-    match n_frames_after.cmp(&n_frames) {
+    match n_frames_after.cmp(&n_frames_before) {
       Ordering::Greater => moved_places.push_frame(),
       Ordering::Less => moved_places.pop_frame(),
       Ordering::Equal => {
@@ -542,8 +548,12 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
             }
             // FIXME(gavinleroy) is the `frame` now the third slot?
             Either::Right((local, _, _)) => {
-              moved_places
-                .add_place(current_frame, Place::from_local(local, self.ecx.tcx()));
+              if n_frames_after > 0 {
+                moved_places.add_place(
+                  self.ecx.frame_idx(),
+                  Place::from_local(local, self.ecx.tcx()),
+                );
+              }
             }
           }
         }
@@ -575,9 +585,10 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
         .map(|LocalFrame { frame, .. }| frame.current_loc());
 
       let moves = self.collect_moves()?;
-      let n_all_frames: usize = Machine::stack(&self.ecx).len();
+      let n_frames_before: usize = Machine::stack(&self.ecx).len();
       let more_work: bool = self.ecx.step()?;
-      self.handle_moves(self.ecx.frame_idx(), n_all_frames, moves)?;
+
+      self.handle_moves(n_frames_before, moves)?;
 
       let local_frames_after = self.local_frames().collect::<Vec<_>>();
       let current_loc_opt = match local_frames_after.len().cmp(&n_local_frames)
@@ -628,9 +639,12 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
             alloc_id: self.remap_alloc_id(alloc_id),
           }
         }
-        ub => MUndefinedBehavior::Other(
-          ub.diagnostic_message().as_str().unwrap().to_string(),
-        ),
+        ub => {
+          MUndefinedBehavior::Other(match ub.diagnostic_message().as_str() {
+            Some(s) => s.to_string(),
+            None => format!("{ub:?}"),
+          })
+        }
       },
       err => bail!("{}", err.diagnostic_message().as_str().unwrap()),
     })
@@ -650,8 +664,9 @@ impl<'mir, 'tcx> VisEvaluator<'mir, 'tcx> {
           }
         }
         Err(e) => {
-          // e.print_backtrace();
-          break MResult::Error(self.beautify_error(e)?);
+          let (info, backtrace) = e.into_parts();
+          backtrace.print_backtrace();
+          break MResult::Error(self.beautify_error(info.into())?);
         }
       }
     };

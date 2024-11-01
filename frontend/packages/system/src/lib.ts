@@ -260,7 +260,7 @@ class Aquascope implements AquascopeBackend {
     this.clearBuffers();
     this.saveProgram(code);
 
-    const env = this.buildEnv(command);
+    const env = this.buildEnv(command);    
     const wasi = new WASI(Aquascope.ARGS, env, this.fds, { debug: this.debug });
 
     const inst = await WebAssembly.instantiate(this.aquascope, {

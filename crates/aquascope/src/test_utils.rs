@@ -1,12 +1,12 @@
 use std::{
   collections::HashMap, env, fs, io, panic, path::Path, process::Command,
+  sync::Arc,
 };
 
 use anyhow::{bail, Context, Result};
 use fluid_let::fluid_set;
 use itertools::Itertools;
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
-use rustc_errors::Handler;
 use rustc_hir::BodyId;
 use rustc_middle::{
   mir::{Rvalue, StatementKind},
@@ -48,8 +48,8 @@ impl FileLoader for StringLoader {
     Ok(self.0.clone())
   }
 
-  fn read_binary_file(&self, path: &Path) -> io::Result<Vec<u8>> {
-    fs::read(path)
+  fn read_binary_file(&self, path: &Path) -> io::Result<Arc<[u8]>> {
+    fs::read(path).map(Into::into)
   }
 }
 

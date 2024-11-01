@@ -6,6 +6,7 @@
   },
   "devDependencies": {
     "@aquascope/editor": "workspace:*",
+    "@aquascope/system": "workspace:*",
     "@codemirror/autocomplete": "^6.3.0",
     "@codemirror/commands": "^6.1.2",
     "@codemirror/language": "^6.3.0",

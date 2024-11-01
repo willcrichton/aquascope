@@ -11,7 +11,6 @@ pub use rustc_const_eval::{
     InterpCx, InterpError, InterpErrorInfo, InterpResult, LocalState,
     LocalValue, MPlaceTy, Machine, MemPlaceMeta, MemoryKind, OpTy, Operand,
     Projectable, Provenance as ProvenanceTrait, UndefinedBehaviorInfo,
-    CheckInAllocMsg,
   },
   ReportErrorExt,
 };

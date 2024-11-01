@@ -147,6 +147,9 @@ importers:
       '@aquascope/editor':
         specifier: workspace:*
         version: link:../editor
+      '@aquascope/system':
+        specifier: workspace:*
+        version: link:../system
       '@codemirror/autocomplete':
         specifier: ^6.3.0
         version: 6.3.0(@codemirror/language@6.8.0)(@codemirror/state@6.2.1)(@codemirror/view@6.14.1)(@lezer/common@1.0.3)

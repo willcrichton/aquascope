@@ -2,6 +2,7 @@
 
 use std::{
   collections::HashMap,
+  env,
   fmt::Write,
   fs,
   path::PathBuf,
@@ -28,7 +29,10 @@ impl AquascopePreprocessor {
     let run_and_get_output = |cmd: &mut Command| -> Result<String> {
       let output = cmd.output()?;
       if !output.status.success() {
-        bail!("Command failed");
+        bail!(
+          "Command failed with stderr:\n{}",
+          String::from_utf8(output.stderr).unwrap()
+        );
       }
       let stdout = String::from_utf8(output.stdout)?;
       Ok(stdout.trim_end().to_string())
@@ -36,10 +40,11 @@ impl AquascopePreprocessor {
 
     let miri_sysroot = aquascope_workspace_utils::miri_sysroot()?;
 
+    let toolchain = aquascope_workspace_utils::toolchain()?;
     let output = run_and_get_output(Command::new("rustup").args([
       "which",
       "--toolchain",
-      &aquascope_workspace_utils::toolchain()?,
+      &toolchain,
       "rustc",
     ]))?;
     let rustc = PathBuf::from(output);

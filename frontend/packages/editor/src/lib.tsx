@@ -1,7 +1,4 @@
-import {
-  type AquascopeBackend,
-  initializeAquascopeInstance
-} from "@aquascope/system";
+import type { AquascopeBackend } from "@aquascope/system";
 import { rust } from "@codemirror/lang-rust";
 import { indentUnit } from "@codemirror/language";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
@@ -115,40 +112,18 @@ export class Editor {
   private buttons: Set<ButtonName>;
   private shouldFail = false;
 
-  public static async make(
+  constructor(
     dom: HTMLDivElement,
-    setup: Extension,
-    reportStdErr: (err: BackendError) => void = err => {
+    readonly setup: Extension,
+    readonly backend: AquascopeBackend | undefined,
+    readonly reportStdErr: (err: BackendError) => void = err => {
       console.error("An error occurred: ");
       console.error(err);
     },
     code: string = defaultCodeExample,
-    noInteract = false,
-    shouldFailHtml = "This code does not compile!",
-    buttonList: ButtonName[] = []
-  ) {
-    const backend = await initializeAquascopeInstance();
-    return new Editor(
-      dom,
-      setup,
-      backend,
-      reportStdErr,
-      code,
-      noInteract,
-      shouldFailHtml,
-      buttonList
-    );
-  }
-
-  private constructor(
-    dom: HTMLDivElement,
-    readonly setup: Extension,
-    readonly backend: AquascopeBackend,
-    readonly reportStdErr: (err: BackendError) => void,
-    code: string,
-    readonly noInteract: boolean,
-    readonly shouldFailHtml: string,
-    readonly buttonList: ButtonName[]
+    readonly noInteract: boolean = false,
+    readonly shouldFailHtml: string = "This code does not compile!",
+    readonly buttonList: ButtonName[] = []
   ) {
     this.buttons = new Set(buttonList);
 
@@ -286,6 +261,8 @@ export class Editor {
     }
 
     if (!response) {
+      if (!this.backend) throw new Error("Cannot generate without backend");
+
       response = await this.backend.call(operation, inEditor, {
         shouldFail: this.shouldFail
       });

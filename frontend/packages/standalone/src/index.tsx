@@ -1,4 +1,5 @@
 import { Editor, defaultCodeExample, type types } from "@aquascope/editor";
+import { initializeAquascopeInstance } from "@aquascope/system";
 import { basicSetup } from "./setup";
 
 declare global {
@@ -89,9 +90,12 @@ window.addEventListener("load", async () => {
     }
   };
 
-  const editor = await Editor.make(
+  const backend = await initializeAquascopeInstance();
+
+  const editor = new Editor(
     editorElement,
     basicSetup,
+    backend,
     reportStdErr,
     defaultCodeExample
   );
