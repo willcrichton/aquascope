@@ -28,7 +28,10 @@ impl AquascopePreprocessor {
     let run_and_get_output = |cmd: &mut Command| -> Result<String> {
       let output = cmd.output()?;
       if !output.status.success() {
-        bail!("Command failed");
+        bail!(
+          "Command failed with stderr:\n{}",
+          String::from_utf8(output.stderr)?
+        );
       }
       let stdout = String::from_utf8(output.stdout)?;
       Ok(stdout.trim_end().to_string())
